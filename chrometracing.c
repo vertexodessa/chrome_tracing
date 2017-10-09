@@ -1,4 +1,4 @@
-#include "tracing_c.h"
+#include "tracing.h"
 
 #include <stdlib.h>
 #include <time.h>

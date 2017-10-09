@@ -1,11 +1,13 @@
 #ifndef TRACING_H
 #define TRACING_H
 
-#if !defined(__cplusplus)
 #include "tracing_c.h"
-#else
-#include "tracing_cpp.h"
+
+#ifdef __cplusplus
+    // Additional C++ API
+    #include "tracing_cpp.h"
 #endif
+
 
 //// common API
 // void __attribute__ ((constructor)) my_init(void);
@@ -162,19 +164,5 @@
 // } IIEvent;
 
 
-// global data
-struct IIGlobalData {
-    static IIGlobalDataImpl* get() {
-        static IIGlobalDataImpl* data = IIInitData();
-        return data;
-    }
-    static void init();
-
-//    void lock();
-//    void unlock();
-
-    static int log(va_args args);
-    static int log(const char* args, ...) /* printf format */;
-};
 
 #endif
