@@ -50,12 +50,12 @@ static inline int iiFlushIntervalFromEnv() {
     }
 
     return ret ?: 1;
-};
+}
 
 static inline const char* iiFileNameFromEnv() {
     const char* ret = getenv(iiTraceFileEnvVar);
     return ret ?: iiDefaultTraceFileName;
-};
+}
 
 static inline void iiMaybeFlush(IIGlobalData* data) {
     while (1) {

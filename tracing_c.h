@@ -1,10 +1,12 @@
 #ifndef II_TRACING_C_H
 #define II_TRACING_C_H
 
+#include <stddef.h> // size_t
+
 const char*    iiTraceFileEnvVar = "II_TRACE_FILE";
 const char*    iiFlushIntervalEnvVar = "II_FLUSH_INTERVAL";
 const char*    iiDefaultTraceFileName = "/tmp/out.trace";
-const int      iiMaxArgumentsStrSize = 1024;
+const size_t   iiMaxArgumentsStrSize = 1024;
 
 #include "tracing_c_internal.h"
 
@@ -20,6 +22,7 @@ const int      iiMaxArgumentsStrSize = 1024;
 
 static inline void II_EVENT_START(const char* x) {
     double time = iiCurrentTimeUs();
+
     // FIXME: join fprintf + maybeFlush to a separate function
     fprintf(__iiGlobalTracerData.fd, "{\"name\": \"%s\", \"cat\": \"PERF\", \"ph\": \"B\", \"pid\": %d, \"tid\": %" PRId64 ", \"ts\": %f, \"args\": {\"dummy\" : 1\"} },\n", x, getpid(), gettid(), time);
     iiMaybeFlush(&__iiGlobalTracerData);
@@ -27,10 +30,10 @@ static inline void II_EVENT_START(const char* x) {
 
 static inline void II_EVENT_END(const char* x) {
     double time = iiCurrentTimeUs();
+
     fprintf(__iiGlobalTracerData.fd, "{\"name\": \"%s\", \"cat\": \"PERF\", \"ph\": \"E\", \"pid\": %d, \"tid\": %" PRId64 ", \"ts\": %f },\n", x, getpid(), gettid(), time);
     iiMaybeFlush(&__iiGlobalTracerData);
 }
-
 
 static inline void II_EVENT_START_ARGS(const char* x, const char* format, ...) {
     va_list vl;
@@ -40,7 +43,7 @@ static inline void II_EVENT_START_ARGS(const char* x, const char* format, ...) {
     int converted = iiGetArgumentsJson(format, vl, allargs);
     va_end(vl);
 
-    if(!converted)
+    if (!converted)
         return;
 
     double time = iiCurrentTimeUs();
