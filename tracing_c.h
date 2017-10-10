@@ -25,14 +25,14 @@ static inline void II_EVENT_START(const char* x) {
 
     // FIXME: join fprintf + maybeFlush to a separate function
     fprintf(__iiGlobalTracerData.fd, "{\"name\": \"%s\", \"cat\": \"PERF\", \"ph\": \"B\", \"pid\": %d, \"tid\": %" PRId64 ", \"ts\": %f },\n", x, getpid(), gettid(), time);
-    iiMaybeFlush(&__iiGlobalTracerData);
+    iiMaybeFlush();
 }
 
 static inline void II_EVENT_END(const char* x) {
     double time = iiCurrentTimeUs();
 
     fprintf(__iiGlobalTracerData.fd, "{\"name\": \"%s\", \"cat\": \"PERF\", \"ph\": \"E\", \"pid\": %d, \"tid\": %" PRId64 ", \"ts\": %f },\n", x, getpid(), gettid(), time);
-    iiMaybeFlush(&__iiGlobalTracerData);
+    iiMaybeFlush();
 }
 
 static inline void II_EVENT_START_ARGS(const char* x, const char* format, ...) {
@@ -49,7 +49,7 @@ static inline void II_EVENT_START_ARGS(const char* x, const char* format, ...) {
     double time = iiCurrentTimeUs();
 
     fprintf(__iiGlobalTracerData.fd, "{\"name\": \"%s\", \"cat\": \"PERF\", \"ph\": \"B\", \"pid\": %d, \"tid\": %" PRId64 ", \"ts\": %f, \"args\": %s},\n", x, getpid(), gettid(), time, allargs);
-    iiMaybeFlush(&__iiGlobalTracerData);
+    iiMaybeFlush();
 }
 
 #define II_TRACE_C_SCOPE(__name, ...)           \

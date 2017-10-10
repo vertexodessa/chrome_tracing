@@ -57,7 +57,8 @@ static inline const char* iiFileNameFromEnv() {
     return ret ?: iiDefaultTraceFileName;
 }
 
-static inline void iiMaybeFlush(IIGlobalData* data) {
+static inline void iiMaybeFlush() {
+    IIGlobalData *data = &__iiGlobalTracerData;
     while (1) {
         int expected = 0;
         int swapped = atomic_compare_exchange_strong(&data->numEventsToFlush, &expected, data->flushInterval);
