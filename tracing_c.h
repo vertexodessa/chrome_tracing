@@ -24,7 +24,7 @@ static inline void II_EVENT_START(const char* x) {
     double time = iiCurrentTimeUs();
 
     // FIXME: join fprintf + maybeFlush to a separate function
-    fprintf(__iiGlobalTracerData.fd, "{\"name\": \"%s\", \"cat\": \"PERF\", \"ph\": \"B\", \"pid\": %d, \"tid\": %" PRId64 ", \"ts\": %f, \"args\": {\"dummy\" : 1\"} },\n", x, getpid(), gettid(), time);
+    fprintf(__iiGlobalTracerData.fd, "{\"name\": \"%s\", \"cat\": \"PERF\", \"ph\": \"B\", \"pid\": %d, \"tid\": %" PRId64 ", \"ts\": %f },\n", x, getpid(), gettid(), time);
     iiMaybeFlush(&__iiGlobalTracerData);
 }
 
