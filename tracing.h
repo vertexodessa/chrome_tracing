@@ -88,42 +88,6 @@
 //     std::string asJson() const;
 //};
 
-
-
-// #define _POSIX_C_SOURCE 199309L
-// #ifndef _GNU_SOURCE
-//     #define _GNU_SOURCE
-// #endif
-
-// #include <assert.h>
-// #include <dlfcn.h>
-// #include <inttypes.h>
-// #include <pthread.h>
-// #include <stdint.h>
-// #include <stdio.h>
-// #include <stdlib.h>
-// #include <sys/syscall.h>
-// #include <sys/time.h>
-// #include <sys/types.h>
-// #include <time.h>
-// #include <unistd.h>
-
-// #ifdef __cplusplus
-//     #include <atomic>
-//     using namespace std;
-// #else
-//     #include <stdatomic.h>
-// #endif
-
-// #ifdef SYS_gettid
-//     #define gettid() syscall(SYS_gettid)
-// #else
-//     #error "SYS_gettid unavailable on this system"
-// #endif
-
-// #define ii_internal_buf_size 1024
-// #define ii_internal_event_buf_size buf_size
-
 // enum IIEventType {
 //     DURATION_BEGIN   = 'B',
 //     DURATION_END     = 'E',
@@ -146,10 +110,6 @@
 //         PROCESS  = 'p',
 //         THREAD   = 't'
 //     };
-// };
-
-// struct Args {
-    
 // };
 
 // typedef struct IIEvent_ {
