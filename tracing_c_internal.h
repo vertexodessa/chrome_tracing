@@ -57,22 +57,29 @@ static inline const char* iiFileNameFromEnv() {
     return ret ?: iiDefaultTraceFileName;
 }
 
-static inline void iiMaybeFlush() {
+static inline int iiDecrementAndReturnNextIndex() {
     IIGlobalData *data = &__iiGlobalTracerData;
     while (1) {
         int expected = 0;
-        int swapped = atomic_compare_exchange_strong(&data->numEventsToFlush, &expected, data->flushInterval);
+        // we don't need to maintain memory consistency except the single "data->numEventsToFlush" variable,
+        // so using _weak exchange should be saafe here.
+        int swapped = atomic_compare_exchange_weak(&data->numEventsToFlush, &expected, data->flushInterval);
         if (swapped) {
-            fflush(data->fd);
+            return 0;
             break;
         } else {
             int actual = expected;
             assert(actual > 0);
-            swapped = atomic_compare_exchange_strong(&data->numEventsToFlush, &actual, actual - 1);
+            swapped = atomic_compare_exchange_weak(&data->numEventsToFlush, &actual, actual - 1);
             if(swapped)
-                break;
+                return actual;
         }
     }
+}
+
+static inline void iiMaybeFlush() {
+    if (iiDecrementAndReturnNextIndex() == 0)
+        fflush(__iiGlobalTracerData.fd);
 }
 
 static inline double iiCurrentTimeUs() {
