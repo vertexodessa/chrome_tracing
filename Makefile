@@ -1,7 +1,10 @@
 
 INITIAL_DIR := `pwd`
 
-all: c cpp
+all: c cpp bench
+
+bench:
+	g++  -g -fno-omit-frame-pointer -O0 -std=c++11 -pthread gbenchmark/bench.cpp -I. -o bench -lbenchmark
 
 cpp:
 	g++  -g -std=c++11 -pthread tests/chrometracing.cpp -I. -o cpp
