@@ -23,4 +23,27 @@ static void BM_int_argument_output(benchmark::State& state) {
 // Register the function as a benchmark
 BENCHMARK(BM_int_argument_output);
 
+static void BM_convert_time_helper(const char* x, const char* format, ...) {
+    va_list vl;
+    char allargs[iiMaxArgumentsStrSize];
+
+    va_start(vl, format);
+    int converted = iiGetArgumentsJson(format, vl, allargs);
+    va_end(vl);
+
+    if (!converted)
+        return;
+}
+
+static void BM_convert_time(benchmark::State& state) {
+    for (auto _ : state) {
+        BM_convert_time_helper("test", "is", "testname", 64, "test1", "teststring1");
+    }
+}
+
+// Register the function as a benchmark
+BENCHMARK(BM_convert_time);
+
+
+
 BENCHMARK_MAIN();
