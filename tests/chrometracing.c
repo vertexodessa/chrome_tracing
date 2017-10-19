@@ -35,7 +35,6 @@ void f1() {
 }
 
 int main() {
-    II_INIT_GLOBAL_VARIABLES();
     f1();
     II_TRACE_C_SCOPE ("f3_scope_from_main",
     {

@@ -3,7 +3,6 @@
 #include <benchmark/benchmark.h>
 
 static void BM_basic_output(benchmark::State& state) {
-    II_INIT_GLOBAL_VARIABLES();
     for (auto _ : state) {
         II_EVENT_START(__PRETTY_FUNCTION__);
         II_EVENT_END(__PRETTY_FUNCTION__);

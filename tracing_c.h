@@ -2,6 +2,7 @@
 #define II_TRACING_C_H
 
 #include <stddef.h> // size_t
+#include <pthread.h>
 
 const char*    iiTraceFileEnvVar = "II_TRACE_FILE";
 const char*    iiFlushIntervalEnvVar = "II_FLUSH_INTERVAL";
@@ -10,18 +11,9 @@ const size_t   iiMaxArgumentsStrSize = 1024;
 
 #include "tracing_c_internal.h"
 
-IIGlobalData __iiGlobalTracerData __attribute__ ((weak));
 
-#define II_INIT_GLOBAL_VARIABLES()                                      \
-    do {                                                                \
-	__iiGlobalTracerData.fd = fopen(iiFileNameFromEnv(), "w");      \
-        setvbuf(__iiGlobalTracerData.fd, NULL , _IOLBF , 4096);         \
-	fprintf(__iiGlobalTracerData.fd, "[");                          \
-        __iiGlobalTracerData.flushInterval = iiFlushIntervalFromEnv();  \
-        __iiGlobalTracerData.numEventsToFlush = __iiGlobalTracerData.flushInterval; \
-    } while (0)
-
-static inline void II_EVENT_START(const char* x) {
+__attribute__ ((weak)) void II_EVENT_START(const char* x) {
+    pthread_once(&__iiGlobalTracerData.once_flag, iiInitGlobalData);
     double time = iiCurrentTimeUs();
 
     // FIXME: join fprintf + maybeFlush to a separate function
@@ -29,14 +21,15 @@ static inline void II_EVENT_START(const char* x) {
     iiMaybeFlush();
 }
 
-static inline void II_EVENT_END(const char* x) {
+__attribute__ ((weak)) void II_EVENT_END(const char* x) {
     double time = iiCurrentTimeUs();
 
     fprintf(__iiGlobalTracerData.fd, "{\"name\": \"%s\", \"cat\": \"PERF\", \"ph\": \"E\", \"pid\": %d, \"tid\": %" PRId64 ", \"ts\": %f },\n", x, getpid(), gettid(), time);
     iiMaybeFlush();
 }
 
-static inline void II_EVENT_START_ARGS(const char* x, const char* format, ...) {
+__attribute__ ((weak)) void II_EVENT_START_ARGS(const char* x, const char* format, ...) {
+    pthread_once(&__iiGlobalTracerData.once_flag, iiInitGlobalData);
     va_list vl;
     char allargs[iiMaxArgumentsStrSize];
 

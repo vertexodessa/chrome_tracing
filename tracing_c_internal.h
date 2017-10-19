@@ -32,15 +32,15 @@
     #define II_ATOMIC_INT atomic_int
 #endif
 
-
 typedef struct __IIGlobalData {
+    pthread_once_t once_flag;
     FILE* fd;
     int flushInterval;
 #warning atomic only works with c11, need to use pthreads if c11 is not available
     II_ATOMIC_INT numEventsToFlush;
 } IIGlobalData;
 
-extern IIGlobalData __iiGlobalTracerData;
+IIGlobalData __iiGlobalTracerData __attribute__ ((weak));
 
 static inline int iiFlushIntervalFromEnv() {
     const char* envVarValue = getenv(iiFlushIntervalEnvVar);
@@ -55,6 +55,14 @@ static inline int iiFlushIntervalFromEnv() {
 static inline const char* iiFileNameFromEnv() {
     const char* ret = getenv(iiTraceFileEnvVar);
     return ret ?: iiDefaultTraceFileName;
+}
+
+static inline void iiInitGlobalData() {
+    __iiGlobalTracerData.fd = fopen(iiFileNameFromEnv(), "w");
+    setvbuf(__iiGlobalTracerData.fd, NULL , _IOLBF , 4096);
+    fprintf(__iiGlobalTracerData.fd, "[");
+    __iiGlobalTracerData.flushInterval = iiFlushIntervalFromEnv();
+    __iiGlobalTracerData.numEventsToFlush = __iiGlobalTracerData.flushInterval;
 }
 
 static inline int iiDecrementAndReturnNextIndex() {
