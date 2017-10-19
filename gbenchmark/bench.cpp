@@ -2,8 +2,6 @@
 
 #include <benchmark/benchmark.h>
 
-II_DECLARE_GLOBAL_VARIABLES();
-
 static void BM_basic_output(benchmark::State& state) {
     II_INIT_GLOBAL_VARIABLES();
     for (auto _ : state) {

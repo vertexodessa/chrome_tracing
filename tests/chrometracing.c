@@ -4,8 +4,6 @@
 #include <time.h>
 #include <unistd.h>
 
-II_DECLARE_GLOBAL_VARIABLES();
-
 void f3() {
     II_TRACE_C_SCOPE ("sleep call (scope trace in f3)",
     {

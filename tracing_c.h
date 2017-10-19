@@ -10,7 +10,8 @@ const size_t   iiMaxArgumentsStrSize = 1024;
 
 #include "tracing_c_internal.h"
 
-#define II_DECLARE_GLOBAL_VARIABLES() IIGlobalData __iiGlobalTracerData;
+IIGlobalData __iiGlobalTracerData __attribute__ ((weak));
+
 #define II_INIT_GLOBAL_VARIABLES()                                      \
     do {                                                                \
 	__iiGlobalTracerData.fd = fopen(iiFileNameFromEnv(), "w");      \
