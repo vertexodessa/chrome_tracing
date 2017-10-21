@@ -5,9 +5,10 @@
 #include <pthread.h>
 
 const char*    iiTraceFileEnvVar = "II_TRACE_FILE";
-const char*    iiFlushIntervalEnvVar = "II_FLUSH_INTERVAL";
+const char*    iiEventQueueSize = "II_EVENT_QUEUE_SIZE";
 const char*    iiDefaultTraceFileName = "/tmp/out.trace";
 const size_t   iiMaxArgumentsStrSize = 1024;
+const size_t   II_MAX_ARGUMENTS = 5;
 
 typedef enum {
     INT = 'i',
@@ -40,17 +41,14 @@ __attribute__ ((weak)) void II_EVENT_END(const char* name) {
 __attribute__ ((weak)) void II_EVENT_START_ARGS(const char* name, const char* format, ...) {
     pthread_once(&__iiGlobalTracerData.once_flag, iiInitEnvironment);
     va_list vl;
-    char allargs[iiMaxArgumentsStrSize];
 
     va_start(vl, format);
-    int converted = iiGetArgumentsJson(format, vl, allargs);
+    const iiEventType eventType = EVENT_START;
+    int converted = iiEventWithArgs(name, eventType, format, vl);
     va_end(vl);
 
     if (!converted)
         return;
-
-    const iiEventType eventType = EVENT_START;
-    iiEventWithArgs(name, eventType, allargs);
 }
 
 #define II_TRACE_C_SCOPE(__name, ...)           \
