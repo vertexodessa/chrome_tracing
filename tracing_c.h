@@ -9,27 +9,36 @@ const char*    iiFlushIntervalEnvVar = "II_FLUSH_INTERVAL";
 const char*    iiDefaultTraceFileName = "/tmp/out.trace";
 const size_t   iiMaxArgumentsStrSize = 1024;
 
+typedef enum {
+    INT = 'i',
+    INT64 = 'l',
+    CONST_STR = 's'
+} iiArgType;
+
+typedef enum {
+    EVENT_START = 'B',
+    EVENT_END = 'E'
+} iiEventType;
+
 #include "tracing_c_internal.h"
 
+// TODO: improve the timing twice by using COMPLETE events ('X') instead
 
-__attribute__ ((weak)) void II_EVENT_START(const char* x) {
-    pthread_once(&__iiGlobalTracerData.once_flag, iiInitGlobalData);
-    double time = iiCurrentTimeUs();
+__attribute__ ((weak)) void II_EVENT_START(const char* name) {
+    pthread_once(&__iiGlobalTracerData.once_flag, iiInitEnvironment);
 
-    // FIXME: join fprintf + maybeFlush to a separate function
-    fprintf(__iiGlobalTracerData.fd, "{\"name\": \"%s\", \"cat\": \"PERF\", \"ph\": \"B\", \"pid\": %d, \"tid\": %" PRId64 ", \"ts\": %f },\n", x, getpid(), gettid(), time);
-    iiMaybeFlush();
+    const iiEventType eventType = EVENT_START;
+    iiEvent(name, eventType);
 }
 
-__attribute__ ((weak)) void II_EVENT_END(const char* x) {
-    double time = iiCurrentTimeUs();
-
-    fprintf(__iiGlobalTracerData.fd, "{\"name\": \"%s\", \"cat\": \"PERF\", \"ph\": \"E\", \"pid\": %d, \"tid\": %" PRId64 ", \"ts\": %f },\n", x, getpid(), gettid(), time);
-    iiMaybeFlush();
+__attribute__ ((weak)) void II_EVENT_END(const char* name) {
+    const iiEventType eventType = EVENT_END;
+    iiEvent(name, eventType);
 }
 
-__attribute__ ((weak)) void II_EVENT_START_ARGS(const char* x, const char* format, ...) {
-    pthread_once(&__iiGlobalTracerData.once_flag, iiInitGlobalData);
+// example: II_EVENT_START_ARGS("myFunc", "is", "integerArgName", 42, "charpArgName", "arg");
+__attribute__ ((weak)) void II_EVENT_START_ARGS(const char* name, const char* format, ...) {
+    pthread_once(&__iiGlobalTracerData.once_flag, iiInitEnvironment);
     va_list vl;
     char allargs[iiMaxArgumentsStrSize];
 
@@ -40,10 +49,8 @@ __attribute__ ((weak)) void II_EVENT_START_ARGS(const char* x, const char* forma
     if (!converted)
         return;
 
-    double time = iiCurrentTimeUs();
-
-    fprintf(__iiGlobalTracerData.fd, "{\"name\": \"%s\", \"cat\": \"PERF\", \"ph\": \"B\", \"pid\": %d, \"tid\": %" PRId64 ", \"ts\": %f, \"args\": %s},\n", x, getpid(), gettid(), time, allargs);
-    iiMaybeFlush();
+    const iiEventType eventType = EVENT_START;
+    iiEventWithArgs(name, eventType, allargs);
 }
 
 #define II_TRACE_C_SCOPE(__name, ...)           \

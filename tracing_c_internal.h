@@ -57,7 +57,7 @@ static inline const char* iiFileNameFromEnv() {
     return ret ?: iiDefaultTraceFileName;
 }
 
-static inline void iiInitGlobalData() {
+static inline void iiInitEnvironment() {
     __iiGlobalTracerData.fd = fopen(iiFileNameFromEnv(), "w");
     setvbuf(__iiGlobalTracerData.fd, NULL , _IOLBF , 4096);
     fprintf(__iiGlobalTracerData.fd, "[");
@@ -79,7 +79,7 @@ static inline int iiDecrementAndReturnNextIndex() {
             int actual = expected;
             assert(actual > 0);
             swapped = atomic_compare_exchange_weak(&data->numEventsToFlush, &actual, actual - 1);
-            if(swapped)
+            if (swapped)
                 return actual;
         }
     }
@@ -137,20 +137,22 @@ static inline int iiGetArgumentsJson(const char *format, va_list vl, char *out) 
     int64_t i64;
     while ( current_args_indx < arg_count ) {
         name = va_arg(vl, const char*);
-        switch (format[current_args_indx]) {
-            case 's':
+
+        iiArgType current_arg = (iiArgType) format[current_args_indx];
+        switch ( current_arg ) {
+            case CONST_STR:
                 s = va_arg(vl, const char*);
                 // TODO: check for string overflow
                 snprintf(args[current_args_indx], iiMaxArgumentsStrSize, "\"%s\": \"%s\"", name, s);
                 current_args_indx++;
                 break;
-            case 'i':
+            case INT:
                 i = va_arg(vl, int32_t);
                 // fprintf(stderr, "III ARGS_case i current %d i %d\n" , current, i); fflush(stdout);
                 snprintf(args[current_args_indx], iiMaxArgumentsStrSize, "\"%s\": %d", name, i);
                 current_args_indx++;
                 break;
-            case 'l':
+            case INT64:
                 i64 = va_arg(vl, int64_t);
                 // fprintf(stderr, "III ARGS_case i current %d i %d\n" , current, i); fflush(stdout);
                 snprintf(args[current_args_indx], iiMaxArgumentsStrSize, "\"%s\": %" PRId64, name, i64);
@@ -166,6 +168,19 @@ static inline int iiGetArgumentsJson(const char *format, va_list vl, char *out) 
 
     iiJoinArguments(arg_count, args, out);
     return 1;
+}
+
+inline static void iiEvent(const char* name, iiEventType type) {
+    double time = iiCurrentTimeUs();
+    fprintf(__iiGlobalTracerData.fd, "{\"name\": \"%s\", \"cat\": \"PERF\", \"ph\": \"%c\", \"pid\": %d, \"tid\": %" PRId64 ", \"ts\": %f },\n", name, (char)type, getpid(), gettid(), time);
+    iiMaybeFlush();
+}
+
+inline static void iiEventWithArgs(const char* name, iiEventType type, const char* args) {
+    double time = iiCurrentTimeUs();
+
+    fprintf(__iiGlobalTracerData.fd, "{\"name\": \"%s\", \"cat\": \"PERF\", \"ph\": \"%c\", \"pid\": %d, \"tid\": %" PRId64 ", \"ts\": %f, \"args\": %s},\n", name, (char)type, getpid(), gettid(), time, args);
+    iiMaybeFlush();
 }
 
 #endif
