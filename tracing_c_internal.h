@@ -28,6 +28,7 @@
     #include <atomic>
     #define II_ATOMIC_INT std::atomic_int
     #define II_ATOMIC_BOOL std::atomic_bool
+    #define II_ATOMIC_PTR std::atomic_uintptr_t
     #define II_memory_order_release std::memory_order_release
     #define II_memory_order_acquire std::memory_order_acquire
     #define II_memory_order_relaxed std::memory_order_relaxed
@@ -35,6 +36,7 @@
     #include <stdatomic.h>
     #define II_ATOMIC_INT atomic_int
     #define II_ATOMIC_BOOL atomic_bool
+    #define II_ATOMIC_PTR atomic_uintptr_t
     #define II_memory_order_release memory_order_release
     #define II_memory_order_acquire memory_order_acquire
     #define II_memory_order_relaxed memory_order_relaxed
@@ -67,17 +69,30 @@ typedef struct {
     iiSingleArgument args[5];
 } iiSingleEvent;
 
+const int eventsPerPage = 1024;
+typedef struct __iiEventsPage {
+    struct __iiEventsPage* next;
+    II_ATOMIC_INT index;
+
+// FIXME: don't hardcode event count    
+    iiSingleEvent events[eventsPerPage];
+} iiEventsPage;
+
 typedef struct __IIGlobalData {
+    II_ATOMIC_INT running;
+    int thread_finished;
+
     pthread_once_t once_flag;
     FILE* fd;
-    int eventQueueSize;
-#warning atomics only work with c11, need to use pthreads or GCC internals if c11 is not available
-    II_ATOMIC_INT currentEventHint;
-    II_ATOMIC_INT resourcesUsed;
-    pthread_cond_t event_added;
-    pthread_mutex_t event_added_mutex;
+
+    pthread_cond_t page_added;
+    iiEventsPage* flushQueue;
     pthread_t flush_thread;
-    iiSingleEvent* queue;
+
+    II_ATOMIC_PTR tail;
+    pthread_mutex_t page_mutex;
+
+    int eventQueueSize;
 } IIGlobalData;
 
 
@@ -92,7 +107,7 @@ static inline int iiEventQueueSizeFromEnv() {
         ret = strtol (envVarValue, NULL, 10);
     }
 
-    return ret ?: 1;
+    return ret ?: 100;
 }
 
 static inline const char* iiFileNameFromEnv() {
@@ -100,27 +115,81 @@ static inline const char* iiFileNameFromEnv() {
     return ret ?: iiDefaultTraceFileName;
 }
 
+void iiStop() {
+    IIGlobalData &data = __iiGlobalTracerData;
+    atomic_store(&data.running, 0);
+    /* while(!data.thread_finished)  */
+    pthread_cond_broadcast(&data.page_added);
+}
+
+void iiJoinThread() {
+    IIGlobalData &data = __iiGlobalTracerData;
+    pthread_join(data.flush_thread, NULL);
+}
+
+__attribute__((destructor)) void dtor() {
+    printf("EXITING!!!!!\n"); fflush(stdout);
+    iiStop();
+    iiJoinThread();
+}
+
+static inline void iiFlushEvent(iiSingleEvent& e) {
+    fprintf(__iiGlobalTracerData.fd, "{\"name\": \"%s\", \"cat\": \"PERF\", \"ph\": \"%c\", \"pid\": %d, \"tid\": %d, \"ts\": %f },\n", e.name, (char)e.type, e.pid, e.tid, e.time);
+
+    atomic_store(&e.flushStatus, (int) II_FLUSHED);
+
+    /* IIGlobalData &data = __iiGlobalTracerData; */
+    /* printf("flushed event %d, %s, used resources %d\n", i, e.name, atomic_load(&data.resourcesUsed)); */
+}
+
+static inline void iiFlushPage(iiEventsPage& p) {
+    for( int i = 0; i < eventsPerPage; ++i ) {
+        while (atomic_load_explicit(&p.events[i].flushStatus, II_memory_order_acquire) != II_READY_TO_FLUSH) { }
+        iiFlushEvent(p.events[i]);
+    }
+}
+
+static inline void iiFlushAllPages() {
+    IIGlobalData &data = __iiGlobalTracerData;
+    iiEventsPage *nextPage = data.flushQueue;
+
+    int i=0;
+    while (nextPage) {
+        ++i;
+        /* printf("flushing page %d\n", i); */
+        iiFlushPage(*nextPage);
+        iiEventsPage *tmp = nextPage;
+        nextPage = tmp->next;
+        free(tmp);
+    }
+
+    data.flushQueue = NULL;
+}
+
 __attribute__ ((weak)) void* flush_thread( void* unused ) {
     (void) unused;
 
     IIGlobalData &data = __iiGlobalTracerData;
-    while (true) {
-        pthread_cond_wait(&data.event_added, &data.event_added_mutex);
-        // wait until the queue is full enough
-        if (atomic_load_explicit(&data.resourcesUsed, II_memory_order_acquire) < data.eventQueueSize / 2)
-            continue;
-        int i = atomic_load_explicit(&data.currentEventHint, II_memory_order_relaxed);
-        while ( atomic_load_explicit(&data.queue[i].flushStatus, II_memory_order_acquire ) == II_READY_TO_FLUSH) {
-            /* printf("flushed event %d, %s, used resources %d\n", i, data.queue[i].name, atomic_load(&data.resourcesUsed)); */
-            iiSingleEvent& e = data.queue[i];
-            fprintf(__iiGlobalTracerData.fd, "{\"name\": \"%s\", \"cat\": \"PERF\", \"ph\": \"%c\", \"pid\": %d, \"tid\": %d, \"ts\": %f },\n", e.name, (char)e.type, e.pid, e.tid, e.time);
+    pthread_mutex_lock(&data.page_mutex);
+    while (atomic_load(&data.running)) {
+        int err;
+        while ((err = pthread_cond_wait(&data.page_added, &data.page_mutex)) != 0) {
+            /* printf("error waiting: %d\n", err); */
+            pthread_mutex_unlock(&data.page_mutex);
+            int err = pthread_mutex_lock(&data.page_mutex);
+            assert(!err);
 
-            atomic_store(&data.queue[i].flushStatus, (int) II_FLUSHED);
-            atomic_fetch_sub_explicit(&data.resourcesUsed, 1, II_memory_order_release);
-            ++i;
-            i %= data.eventQueueSize;
         }
+        /* printf("flushallPages\n"); */
+        iiFlushAllPages();
     }
+
+    iiFlushAllPages();
+    pthread_mutex_unlock(&data.page_mutex);
+    fflush(__iiGlobalTracerData.fd);
+    /* printf("!!!Flushed the data\n"); */
+    data.thread_finished = 1;
+
     return NULL;
 }
 
@@ -130,20 +199,20 @@ static inline void iiInitEnvironment() {
     setvbuf(data.fd, NULL , _IOLBF , 4096);
     fprintf(data.fd, "[");
     data.eventQueueSize = iiEventQueueSizeFromEnv();
-    data.queue = (iiSingleEvent*) calloc(sizeof(iiSingleEvent), data.eventQueueSize);
-    data.currentEventHint = 0;
+    atomic_store(&data.running, 1);
+
+    data.thread_finished = 0;
 
     pthread_condattr_t ignored;
-    pthread_cond_init(&data.event_added, &ignored);
+    if (pthread_cond_init(&data.page_added, &ignored))
+        printf("ERROR: can't init cond var\n");
 
-    pthread_mutexattr_t ignored1;
-    pthread_mutex_init(&data.event_added_mutex, &ignored1);
+    data.page_mutex = PTHREAD_MUTEX_INITIALIZER;
 
     pthread_attr_t attr;
     pthread_attr_init(&attr);
 
     pthread_create(&data.flush_thread, &attr, &flush_thread, NULL);
-    data.resourcesUsed = 0;
 }
 
 static inline int iiDecrementWrapped(II_ATOMIC_INT* value, int boundary) {
@@ -252,11 +321,6 @@ static inline int iiGetArguments(const char *format, va_list vl, iiSingleArgumen
     return arg_count;
 }
 
-void iiEventAdded() {
-    IIGlobalData &data = __iiGlobalTracerData;
-    atomic_fetch_add_explicit(&data.resourcesUsed, 1, II_memory_order_release);
-    pthread_cond_signal(&data.event_added);
-}
 
 static inline int iiIncrementWrapped( II_ATOMIC_INT* i, int ceil ) {
     int expected, desired;
@@ -269,36 +333,80 @@ static inline int iiIncrementWrapped( II_ATOMIC_INT* i, int ceil ) {
     return desired;
 }
 
-size_t iiGetNextEventIndex() {
-    IIGlobalData &data = __iiGlobalTracerData;
-
-    int eventIndex;
-    int ignored = II_FLUSHED;
-    do {
-        eventIndex = iiIncrementWrapped(&data.currentEventHint, data.eventQueueSize);
-        ignored = II_FLUSHED;
-    } while( !atomic_compare_exchange_weak(&data.queue[eventIndex].flushStatus, &ignored, (int) II_FILLING) );
-
-    return eventIndex;
-}
-
 void iiReleaseEvent(iiSingleEvent* e) {
     int expected = II_FILLING;
-    int exchanged = atomic_compare_exchange_weak_explicit(&e->flushStatus, &expected, (int)II_READY_TO_FLUSH, II_memory_order_release, II_memory_order_relaxed);
+    int exchanged = atomic_compare_exchange_strong_explicit(&e->flushStatus, &expected, (int)II_READY_TO_FLUSH, II_memory_order_release, II_memory_order_relaxed);
 
     assert(exchanged);
     assert(expected == II_FILLING);
+}
 
-    iiEventAdded();
+void iiPageAdded() {
+    IIGlobalData &data = __iiGlobalTracerData;
+    pthread_cond_broadcast(&data.page_added);
+}
+
+static inline iiSingleEvent& iiEventFromNewPage() {
+    IIGlobalData &data = __iiGlobalTracerData;
+    pthread_mutex_lock(&data.page_mutex);
+
+    iiEventsPage* page = (iiEventsPage*) atomic_load(&data.tail);
+
+    if (page) {
+// relax mem order    
+        int idx = atomic_fetch_add(&page->index, 1);
+        if ( idx <= eventsPerPage ) {
+            pthread_mutex_unlock(&data.page_mutex);
+            return page->events[idx];
+        }
+    }
+
+    // we're definitely out of space. Let's allocate a new page.
+    iiEventsPage* newPage = (iiEventsPage*) calloc(sizeof(iiEventsPage), 1);
+    iiEventsPage* oldtail = (iiEventsPage*) atomic_load(&data.tail);
+    atomic_store(&newPage->index, 1);
+    atomic_store(&data.tail, (uintptr_t) newPage);
+
+    iiEventsPage* i = data.flushQueue;
+    if (i) {
+        while (i->next)
+            i = i->next;
+        i->next = oldtail;
+    } else {
+        data.flushQueue = oldtail;
+    }
+
+    /* printf("added page, %p, oldtail next %p\n", oldtail, oldtail ? oldtail->next : 0); */
+
+// relax mem order    
+    iiPageAdded();
+    pthread_mutex_unlock(&data.page_mutex);
+    pthread_yield();
+
+    return newPage->events[0];
+}
+
+static inline iiSingleEvent& iiGetNextEvent() {
+    IIGlobalData &data = __iiGlobalTracerData;
+
+// relax mem order     
+    iiEventsPage* page = (iiEventsPage*) atomic_load(&data.tail);
+
+    if (!page)
+        return iiEventFromNewPage();
+
+// relax mem order    
+    int idx = atomic_fetch_add(&page->index, 1);
+    if ( idx >= eventsPerPage )
+        return iiEventFromNewPage();
+
+    return page->events[idx];
 }
 
 // FIXME: LIMITATION: name must be alive for the program lifetime
 inline static void iiEvent(const char* name, iiEventType type) {
-    IIGlobalData &data = __iiGlobalTracerData;
-
-    size_t nextIdx = iiGetNextEventIndex();
-
-    iiSingleEvent &e = data.queue[nextIdx];
+    iiSingleEvent &e = iiGetNextEvent();
+    atomic_store_explicit(&e.flushStatus, (int)II_FILLING, II_memory_order_release);
     e.type = type;
     e.name = name;
     e.argCount = 0;
@@ -313,11 +421,10 @@ inline static int iiEventWithArgs(const char* name,
                                    iiEventType type,
                                    const char* format,
                                    va_list args) {
+    return 1;
     IIGlobalData &data = __iiGlobalTracerData;
 
-    size_t nextIdx = iiGetNextEventIndex();
-
-    iiSingleEvent &e = data.queue[nextIdx];
+    iiSingleEvent &e = iiGetNextEvent();
     e.type = type;
     e.name = name;
     e.argCount = 0;
