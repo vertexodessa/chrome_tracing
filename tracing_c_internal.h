@@ -173,15 +173,17 @@ __attribute__ ((weak)) void* flush_thread( void* unused ) {
     pthread_mutex_lock(&data.page_mutex);
     while (atomic_load(&data.running)) {
         int err;
-        while ((err = pthread_cond_wait(&data.page_added, &data.page_mutex)) != 0) {
-            /* printf("error waiting: %d\n", err); */
-            pthread_mutex_unlock(&data.page_mutex);
-            int err = pthread_mutex_lock(&data.page_mutex);
-            assert(!err);
-
-        }
-        /* printf("flushallPages\n"); */
-        iiFlushAllPages();
+        while ((err = pthread_cond_wait(&data.page_added, &data.page_mutex)) != 0) {  }
+      flushNext:
+        iiEventsPage *tmp = data.flushQueue;
+        data.flushQueue = tmp->next;
+        pthread_mutex_unlock(&data.page_mutex);
+        iiFlushPage(*tmp);
+        free(tmp);
+        pthread_mutex_lock(&data.page_mutex);
+        if (data.flushQueue)
+            goto flushNext;
+        //iiFlushAllPages();
     }
 
     iiFlushAllPages();
@@ -381,7 +383,7 @@ static inline iiSingleEvent& iiEventFromNewPage() {
 // relax mem order    
     iiPageAdded();
     pthread_mutex_unlock(&data.page_mutex);
-    pthread_yield();
+    //pthread_yield();
 
     return newPage->events[0];
 }
