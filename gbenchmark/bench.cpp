@@ -21,11 +21,12 @@ static void BM_int_argument_output(benchmark::State& state) {
 BENCHMARK(BM_int_argument_output);
 
 static void BM_convert_time_helper(const char* x, const char* format, ...) {
-    va_list vl;
     iiSingleArgument allargs[II_MAX_ARGUMENTS];
+    int converted;
 
+    va_list vl;
     va_start(vl, format);
-    int converted = iiGetArguments(format, vl, allargs);
+    converted = iiGetArguments(format, vl, &allargs);
     va_end(vl);
 
     if (!converted)

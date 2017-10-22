@@ -1,7 +1,9 @@
 #ifndef II_TRACING_C_INTERNAL
 #define II_TRACING_C_INTERNAL
 
-#define _POSIX_C_SOURCE 199309L
+#ifndef _POSIX_C_SOURCE
+    #define _POSIX_C_SOURCE 199309L
+#endif
 #ifndef _GNU_SOURCE
     #define _GNU_SOURCE
 #endif
@@ -69,7 +71,7 @@ typedef struct {
     iiSingleArgument args[5];
 } iiSingleEvent;
 
-const int eventsPerPage = 1024;
+#define eventsPerPage 1024
 typedef struct __iiEventsPage {
     struct __iiEventsPage* next;
     II_ATOMIC_INT index;
@@ -116,15 +118,15 @@ static inline const char* iiFileNameFromEnv() {
 }
 
 void iiStop() {
-    IIGlobalData &data = __iiGlobalTracerData;
-    atomic_store(&data.running, 0);
+    IIGlobalData *data = &__iiGlobalTracerData;
+    atomic_store(&data->running, 0);
     /* while(!data.thread_finished)  */
-    pthread_cond_broadcast(&data.page_added);
+    pthread_cond_broadcast(&data->page_added);
 }
 
 void iiJoinThread() {
-    IIGlobalData &data = __iiGlobalTracerData;
-    pthread_join(data.flush_thread, NULL);
+    IIGlobalData *data = &__iiGlobalTracerData;
+    pthread_join(data->flush_thread, NULL);
 }
 
 __attribute__((destructor)) void dtor() {
@@ -133,88 +135,90 @@ __attribute__((destructor)) void dtor() {
     iiJoinThread();
 }
 
-static inline void iiFlushEvent(iiSingleEvent& e) {
-    fprintf(__iiGlobalTracerData.fd, "{\"name\": \"%s\", \"cat\": \"PERF\", \"ph\": \"%c\", \"pid\": %d, \"tid\": %d, \"ts\": %f },\n", e.name, (char)e.type, e.pid, e.tid, e.time);
+static inline void iiFlushEvent(iiSingleEvent* e) {
+    fprintf(__iiGlobalTracerData.fd, "{\"name\": \"%s\", \"cat\": \"PERF\", \"ph\": \"%c\", \"pid\": %d, \"tid\": %d, \"ts\": %f },\n", e->name, (char)e->type, e->pid, e->tid, e->time);
 
-    atomic_store(&e.flushStatus, (int) II_FLUSHED);
+    atomic_store(&e->flushStatus, (int) II_FLUSHED);
 
     /* IIGlobalData &data = __iiGlobalTracerData; */
     /* printf("flushed event %d, %s, used resources %d\n", i, e.name, atomic_load(&data.resourcesUsed)); */
 }
 
-static inline void iiFlushPage(iiEventsPage& p) {
+static inline void iiFlushPage(iiEventsPage* p) {
     for( int i = 0; i < eventsPerPage; ++i ) {
-        while (atomic_load_explicit(&p.events[i].flushStatus, II_memory_order_acquire) != II_READY_TO_FLUSH) { }
-        iiFlushEvent(p.events[i]);
+        while (atomic_load_explicit(&p->events[i].flushStatus, II_memory_order_acquire) != II_READY_TO_FLUSH) { }
+        iiFlushEvent(&p->events[i]);
     }
 }
 
 static inline void iiFlushAllPages() {
-    IIGlobalData &data = __iiGlobalTracerData;
-    iiEventsPage *nextPage = data.flushQueue;
+    IIGlobalData *data = &__iiGlobalTracerData;
+    iiEventsPage *nextPage = data->flushQueue;
 
     int i=0;
     while (nextPage) {
         ++i;
         /* printf("flushing page %d\n", i); */
-        iiFlushPage(*nextPage);
+        iiFlushPage(nextPage);
         iiEventsPage *tmp = nextPage;
         nextPage = tmp->next;
         free(tmp);
     }
 
-    data.flushQueue = NULL;
+    data->flushQueue = NULL;
 }
 
 __attribute__ ((weak)) void* flush_thread( void* unused ) {
     (void) unused;
 
-    IIGlobalData &data = __iiGlobalTracerData;
-    pthread_mutex_lock(&data.page_mutex);
-    while (atomic_load(&data.running)) {
+    IIGlobalData *data = &__iiGlobalTracerData;
+    pthread_mutex_lock(&data->page_mutex);
+    while (atomic_load(&data->running)) {
         int err;
-        while ((err = pthread_cond_wait(&data.page_added, &data.page_mutex)) != 0) {  }
+        while ((err = pthread_cond_wait(&data->page_added, &data->page_mutex)) != 0) {  }
+        iiEventsPage *tmp;
       flushNext:
-        iiEventsPage *tmp = data.flushQueue;
-        data.flushQueue = tmp->next;
-        pthread_mutex_unlock(&data.page_mutex);
-        iiFlushPage(*tmp);
+        tmp = data->flushQueue;
+        if(!tmp)
+            continue;
+        data->flushQueue = tmp->next;
+        pthread_mutex_unlock(&data->page_mutex);
+        iiFlushPage(tmp);
         free(tmp);
-        pthread_mutex_lock(&data.page_mutex);
-        if (data.flushQueue)
-            goto flushNext;
+        pthread_mutex_lock(&data->page_mutex);
+        goto flushNext;
         //iiFlushAllPages();
     }
 
     iiFlushAllPages();
-    pthread_mutex_unlock(&data.page_mutex);
-    fflush(__iiGlobalTracerData.fd);
+    pthread_mutex_unlock(&data->page_mutex);
+    fflush(data->fd);
     /* printf("!!!Flushed the data\n"); */
-    data.thread_finished = 1;
+    data->thread_finished = 1;
 
     return NULL;
 }
 
 static inline void iiInitEnvironment() {
-    IIGlobalData &data = __iiGlobalTracerData;
-    data.fd = fopen(iiFileNameFromEnv(), "w");
-    setvbuf(data.fd, NULL , _IOLBF , 4096);
-    fprintf(data.fd, "[");
-    data.eventQueueSize = iiEventQueueSizeFromEnv();
-    atomic_store(&data.running, 1);
+    IIGlobalData *data = &__iiGlobalTracerData;
+    data->fd = fopen(iiFileNameFromEnv(), "w");
+    setvbuf(data->fd, NULL , _IOLBF , 4096);
+    fprintf(data->fd, "[");
+    data->eventQueueSize = iiEventQueueSizeFromEnv();
+    atomic_store(&data->running, 1);
 
-    data.thread_finished = 0;
+    data->thread_finished = 0;
 
     pthread_condattr_t ignored;
-    if (pthread_cond_init(&data.page_added, &ignored))
+    if (pthread_cond_init(&data->page_added, &ignored))
         printf("ERROR: can't init cond var\n");
 
-    data.page_mutex = PTHREAD_MUTEX_INITIALIZER;
+    pthread_mutex_init ( &data->page_mutex, NULL);
 
     pthread_attr_t attr;
     pthread_attr_init(&attr);
 
-    pthread_create(&data.flush_thread, &attr, &flush_thread, NULL);
+    pthread_create(&data->flush_thread, &attr, &flush_thread, NULL);
 }
 
 static inline int iiDecrementWrapped(II_ATOMIC_INT* value, int boundary) {
@@ -273,43 +277,33 @@ static inline int iiJoinArguments(size_t arg_count, const char (*args)[iiMaxArgu
     return 1;
 }
 
-static inline int iiGetArguments(const char *format, va_list vl, iiSingleArgument (&args_ret)[5]) {
+static inline int iiGetArguments(const char *format, va_list vl, iiSingleArgument args_ret[][5]) {
     int arg_count = strlen(format);
-    char args[arg_count][iiMaxArgumentsStrSize];
     int current_args_indx = 0;
     const char* name;
-    union {
-        const char* s;
-        int i;
-        int64_t i64;
-    };
+    int64_t i64;
 
     while ( current_args_indx < arg_count ) {
         name = va_arg(vl, const char*);
 
-        iiArgType current_arg = (iiArgType) format[current_args_indx];
-
-        args_ret[current_args_indx].type = current_arg;
-        switch ( current_arg ) {
+        iiArgType current_arg_type = (iiArgType) format[current_args_indx];
+        iiSingleArgument *curr_arg = &(*args_ret)[current_args_indx];
+        curr_arg->type = current_arg_type;
+        switch ( current_arg_type ) {
             case CONST_STR:
-                s = va_arg(vl, const char*);
                 // TODO: check for string overflow
-                args_ret[current_args_indx].s = s;
-                snprintf(args[current_args_indx], iiMaxArgumentsStrSize, "\"%s\": \"%s\"", name, s);
+                curr_arg->s = va_arg(vl, const char*);
                 current_args_indx++;
                 break;
             case INT:
-                i = va_arg(vl, int32_t);
                 // fprintf(stderr, "III ARGS_case i current %d i %d\n" , current, i); fflush(stdout);
-                args_ret[current_args_indx].i = i;
-                snprintf(args[current_args_indx], iiMaxArgumentsStrSize, "\"%s\": %d", name, i);
+                curr_arg->i = va_arg(vl, int32_t);
                 current_args_indx++;
                 break;
             case INT64:
                 i64 = va_arg(vl, int64_t);
-                args_ret[current_args_indx].i64 = i64;
+                curr_arg->i64 = i64;
                 // fprintf(stderr, "III ARGS_case i current %d i %d\n" , current, i); fflush(stdout);
-                snprintf(args[current_args_indx], iiMaxArgumentsStrSize, "\"%s\": %" PRId64, name, i64);
                 current_args_indx++;
                 break;
             default:
@@ -344,55 +338,55 @@ void iiReleaseEvent(iiSingleEvent* e) {
 }
 
 void iiPageAdded() {
-    IIGlobalData &data = __iiGlobalTracerData;
-    pthread_cond_broadcast(&data.page_added);
+    IIGlobalData *data = &__iiGlobalTracerData;
+    pthread_cond_broadcast(&data->page_added);
 }
 
-static inline iiSingleEvent& iiEventFromNewPage() {
-    IIGlobalData &data = __iiGlobalTracerData;
-    pthread_mutex_lock(&data.page_mutex);
+static inline iiSingleEvent* iiEventFromNewPage() {
+    IIGlobalData *data = &__iiGlobalTracerData;
+    pthread_mutex_lock(&data->page_mutex);
 
-    iiEventsPage* page = (iiEventsPage*) atomic_load(&data.tail);
+    iiEventsPage* page = (iiEventsPage*) atomic_load(&data->tail);
 
     if (page) {
 // relax mem order    
         int idx = atomic_fetch_add(&page->index, 1);
         if ( idx <= eventsPerPage ) {
-            pthread_mutex_unlock(&data.page_mutex);
-            return page->events[idx];
+            pthread_mutex_unlock(&data->page_mutex);
+            return &page->events[idx];
         }
     }
 
     // we're definitely out of space. Let's allocate a new page.
     iiEventsPage* newPage = (iiEventsPage*) calloc(sizeof(iiEventsPage), 1);
-    iiEventsPage* oldtail = (iiEventsPage*) atomic_load(&data.tail);
+    iiEventsPage* oldtail = (iiEventsPage*) atomic_load(&data->tail);
     atomic_store(&newPage->index, 1);
-    atomic_store(&data.tail, (uintptr_t) newPage);
+    atomic_store(&data->tail, (uintptr_t) newPage);
 
-    iiEventsPage* i = data.flushQueue;
+    iiEventsPage* i = data->flushQueue;
     if (i) {
         while (i->next)
             i = i->next;
         i->next = oldtail;
     } else {
-        data.flushQueue = oldtail;
+        data->flushQueue = oldtail;
     }
 
     /* printf("added page, %p, oldtail next %p\n", oldtail, oldtail ? oldtail->next : 0); */
 
 // relax mem order    
     iiPageAdded();
-    pthread_mutex_unlock(&data.page_mutex);
+    pthread_mutex_unlock(&data->page_mutex);
     //pthread_yield();
 
-    return newPage->events[0];
+    return &newPage->events[0];
 }
 
-static inline iiSingleEvent& iiGetNextEvent() {
-    IIGlobalData &data = __iiGlobalTracerData;
+static inline iiSingleEvent* iiGetNextEvent() {
+    IIGlobalData *data = &__iiGlobalTracerData;
 
 // relax mem order     
-    iiEventsPage* page = (iiEventsPage*) atomic_load(&data.tail);
+    iiEventsPage* page = (iiEventsPage*) atomic_load(&data->tail);
 
     if (!page)
         return iiEventFromNewPage();
@@ -402,42 +396,40 @@ static inline iiSingleEvent& iiGetNextEvent() {
     if ( idx >= eventsPerPage )
         return iiEventFromNewPage();
 
-    return page->events[idx];
+    return &page->events[idx];
 }
 
 // FIXME: LIMITATION: name must be alive for the program lifetime
-inline static void iiEvent(const char* name, iiEventType type) {
-    iiSingleEvent &e = iiGetNextEvent();
-    atomic_store_explicit(&e.flushStatus, (int)II_FILLING, II_memory_order_release);
-    e.type = type;
-    e.name = name;
-    e.argCount = 0;
-    e.tid = gettid();
-    e.pid = getpid();
-    e.time = iiCurrentTimeUs();
+static inline void iiEvent(const char* name, iiEventType type) {
+    iiSingleEvent *e = iiGetNextEvent();
+    atomic_store_explicit(&e->flushStatus, (int)II_FILLING, II_memory_order_release);
+    e->type = type;
+    e->name = name;
+    e->argCount = 0;
+    e->tid = gettid();
+    e->pid = getpid();
+    e->time = iiCurrentTimeUs();
 
-    iiReleaseEvent(&e);
+    iiReleaseEvent(e);
 }
 
-inline static int iiEventWithArgs(const char* name,
+static inline int iiEventWithArgs(const char* name,
                                    iiEventType type,
                                    const char* format,
                                    va_list args) {
-    return 1;
-    IIGlobalData &data = __iiGlobalTracerData;
+    iiSingleEvent *e = iiGetNextEvent();
+    atomic_store_explicit(&e->flushStatus, (int)II_FILLING, II_memory_order_release);
+    e->type = type;
+    e->name = name;
+    e->argCount = 0;
+    e->tid = gettid();
+    e->pid = getpid();
+    e->time = iiCurrentTimeUs();
 
-    iiSingleEvent &e = iiGetNextEvent();
-    e.type = type;
-    e.name = name;
-    e.argCount = 0;
-    e.tid = gettid();
-    e.pid = getpid();
-    e.time = iiCurrentTimeUs();
+    e->argCount = iiGetArguments(format, args, &e->args);
 
-    e.argCount = iiGetArguments(format, args, e.args);
-
-    iiReleaseEvent(&e);
-    return e.argCount;
+    iiReleaseEvent(e);
+    return e->argCount;
 }
 
 #endif
