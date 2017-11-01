@@ -47,7 +47,7 @@
 #if 1
     #define LOG(...)
 #else
-    #define LOG(...)  do { printf("LOG: "); printf(__VA_ARGS__); printf("\n"); fflush(stdout); } while(false)
+    #define LOG(...)  do { printf("LOG: "); printf(__VA_ARGS__); printf("\n"); fflush(stdout); } while(0)
 #endif
 
 typedef enum {
@@ -183,8 +183,7 @@ static inline void iiFlushEvent(iiSingleEvent* e) {
 
     atomic_store(&e->flushStatus, (int) II_FLUSHED);
 
-    IIGlobalData *data = &__iiGlobalTracerData;
-    LOG("flushed event %d, %s, used resources %d", i, e.name, atomic_load(&data->resourcesUsed));
+    LOG("flushed event %s", e->name);
 }
 
 static inline void iiFlushPage(iiEventsPage* p) {
@@ -300,19 +299,18 @@ static inline int iiGetArguments(const char *format, va_list vl, iiSingleArgumen
         curr_arg->type = current_arg_type;
         switch ( current_arg_type ) {
             case CONST_STR:
-                // TODO: check for string overflow
                 curr_arg->s = va_arg(vl, const char*);
                 current_args_indx++;
                 break;
             case INT:
-                LOG("III ARGS_case i current %d i %d" , current, i);
                 curr_arg->i = va_arg(vl, int32_t);
+                LOG("III ARGS_case i current %d i %d", current_args_indx, curr_arg->i);
                 current_args_indx++;
                 break;
             case INT64:
                 i64 = va_arg(vl, int64_t);
                 curr_arg->i64 = i64;
-                LOG("III ARGS_case i current %d i %d" , current, i);
+                LOG("III ARGS_case i current %d i %ld", current_args_indx, curr_arg->i64);
                 current_args_indx++;
                 break;
             default:
