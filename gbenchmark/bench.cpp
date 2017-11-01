@@ -62,7 +62,7 @@ static void BM_convert_args(benchmark::State& state) {
     for (auto _ : state) {
         iiJoinArguments(3, &allargs, out);
     }
-    const char* ref_str = "{\"str_arg_name\": \"string argument\",\"i64_arg_name\": 10000000,\"int_arg_name\": 65537}";
+    const char* ref_str = "\"str_arg_name\": \"string argument\",\"i64_arg_name\": 10000000,\"int_arg_name\": 65537";
     assert(strcmp(out, ref_str) == 0);
 }
 
