@@ -78,7 +78,7 @@ typedef struct {
     iiSingleArgument args[5];
 } iiSingleEvent;
 
-#define eventsPerPage 1024
+#define eventsPerPage 4096
 typedef struct __iiEventsPage {
     struct __iiEventsPage* next;
     II_ATOMIC_INT index;
