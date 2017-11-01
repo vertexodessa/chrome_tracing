@@ -13,7 +13,8 @@ const size_t   II_MAX_ARGUMENTS = 5;
 typedef enum {
     INT = 'i',
     INT64 = 'l',
-    CONST_STR = 's'
+    CONST_STR = 's',
+    NONE = '\0'
 } iiArgType;
 
 typedef enum {
