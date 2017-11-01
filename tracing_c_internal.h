@@ -44,6 +44,12 @@
     #define II_memory_order_relaxed memory_order_relaxed
 #endif
 
+#if 1
+    #define LOG(...)
+#else
+    #define LOG(...)  do { printf("LOG: "); printf(__VA_ARGS__); printf("\n"); fflush(stdout); } while(false)
+#endif
+
 typedef enum {
     II_FLUSHED         = 0,
     II_FILLING         = 1,
@@ -82,7 +88,6 @@ typedef struct __iiEventsPage {
 
 typedef struct __IIGlobalData {
     II_ATOMIC_INT running;
-    int thread_finished;
 
     pthread_once_t once_flag;
     FILE* fd;
@@ -120,7 +125,6 @@ static inline const char* iiFileNameFromEnv() {
 void iiStop() {
     IIGlobalData *data = &__iiGlobalTracerData;
     atomic_store(&data->running, 0);
-    /* while(!data.thread_finished)  */
     pthread_cond_broadcast(&data->page_added);
 }
 
@@ -130,7 +134,7 @@ void iiJoinThread() {
 }
 
 __attribute__((destructor)) void dtor() {
-    printf("EXITING!!!!!\n"); fflush(stdout);
+    LOG("EXITING!!!!!");
     iiStop();
     iiJoinThread();
 }
@@ -140,8 +144,8 @@ static inline void iiFlushEvent(iiSingleEvent* e) {
 
     atomic_store(&e->flushStatus, (int) II_FLUSHED);
 
-    /* IIGlobalData &data = __iiGlobalTracerData; */
-    /* printf("flushed event %d, %s, used resources %d\n", i, e.name, atomic_load(&data.resourcesUsed)); */
+    IIGlobalData *data = &__iiGlobalTracerData;
+    LOG("flushed event %d, %s, used resources %d", i, e.name, atomic_load(&data->resourcesUsed));
 }
 
 static inline void iiFlushPage(iiEventsPage* p) {
@@ -158,7 +162,7 @@ static inline void iiFlushAllPages() {
     int i=0;
     while (nextPage) {
         ++i;
-        /* printf("flushing page %d\n", i); */
+        LOG("flushing page %d", i);
         iiFlushPage(nextPage);
         iiEventsPage *tmp = nextPage;
         nextPage = tmp->next;
@@ -179,7 +183,7 @@ __attribute__ ((weak)) void* flush_thread( void* unused ) {
         iiEventsPage *tmp;
       flushNext:
         tmp = data->flushQueue;
-        if(!tmp)
+        if (!tmp)
             continue;
         data->flushQueue = tmp->next;
         pthread_mutex_unlock(&data->page_mutex);
@@ -187,14 +191,12 @@ __attribute__ ((weak)) void* flush_thread( void* unused ) {
         free(tmp);
         pthread_mutex_lock(&data->page_mutex);
         goto flushNext;
-        //iiFlushAllPages();
     }
 
     iiFlushAllPages();
     pthread_mutex_unlock(&data->page_mutex);
     fflush(data->fd);
-    /* printf("!!!Flushed the data\n"); */
-    data->thread_finished = 1;
+    LOG("!!!Flushed the data");
 
     return NULL;
 }
@@ -207,13 +209,11 @@ static inline void iiInitEnvironment() {
     data->eventQueueSize = iiEventQueueSizeFromEnv();
     atomic_store(&data->running, 1);
 
-    data->thread_finished = 0;
-
     pthread_condattr_t ignored;
     if (pthread_cond_init(&data->page_added, &ignored))
-        printf("ERROR: can't init cond var\n");
+        printf("ERROR: can't init conditional variable\n");
 
-    pthread_mutex_init ( &data->page_mutex, NULL);
+    pthread_mutex_init(&data->page_mutex, NULL);
 
     pthread_attr_t attr;
     pthread_attr_init(&attr);
@@ -296,14 +296,14 @@ static inline int iiGetArguments(const char *format, va_list vl, iiSingleArgumen
                 current_args_indx++;
                 break;
             case INT:
-                // fprintf(stderr, "III ARGS_case i current %d i %d\n" , current, i); fflush(stdout);
+                LOG("III ARGS_case i current %d i %d" , current, i);
                 curr_arg->i = va_arg(vl, int32_t);
                 current_args_indx++;
                 break;
             case INT64:
                 i64 = va_arg(vl, int64_t);
                 curr_arg->i64 = i64;
-                // fprintf(stderr, "III ARGS_case i current %d i %d\n" , current, i); fflush(stdout);
+                LOG("III ARGS_case i current %d i %d" , current, i);
                 current_args_indx++;
                 break;
             default:
@@ -372,7 +372,7 @@ static inline iiSingleEvent* iiEventFromNewPage() {
         data->flushQueue = oldtail;
     }
 
-    /* printf("added page, %p, oldtail next %p\n", oldtail, oldtail ? oldtail->next : 0); */
+    LOG("added page, %p, oldtail next %p", oldtail, oldtail ? oldtail->next : 0);
 
 // relax mem order    
     iiPageAdded();
@@ -399,7 +399,7 @@ static inline iiSingleEvent* iiGetNextEvent() {
     return &page->events[idx];
 }
 
-// FIXME: LIMITATION: name must be alive for the program lifetime
+// NOTE: LIMITATION: name must be alive for the program lifetime
 static inline void iiEvent(const char* name, iiEventType type) {
     iiSingleEvent *e = iiGetNextEvent();
     atomic_store_explicit(&e->flushStatus, (int)II_FILLING, II_memory_order_release);
