@@ -358,8 +358,7 @@ static inline iiSingleEvent* iiEventFromNewPage() {
     iiEventsPage* page = (iiEventsPage*) atomic_load(&data->tail);
 
     if (page) {
-// relax mem order    
-        int idx = atomic_fetch_add(&page->index, 1);
+        int idx = atomic_fetch_add_explicit(&page->index, 1, II_memory_order_acquire);
         if ( idx <= eventsPerPage ) {
             pthread_mutex_unlock(&data->page_mutex);
             return &page->events[idx];
@@ -383,10 +382,8 @@ static inline iiSingleEvent* iiEventFromNewPage() {
 
     LOG("added page, %p, oldtail next %p", oldtail, oldtail ? oldtail->next : 0);
 
-// relax mem order    
     iiPageAdded();
     pthread_mutex_unlock(&data->page_mutex);
-    //pthread_yield();
 
     return &newPage->events[0];
 }
@@ -394,14 +391,12 @@ static inline iiSingleEvent* iiEventFromNewPage() {
 static inline iiSingleEvent* iiGetNextEvent() {
     IIGlobalData *data = &__iiGlobalTracerData;
 
-// relax mem order     
-    iiEventsPage* page = (iiEventsPage*) atomic_load(&data->tail);
+    iiEventsPage* page = (iiEventsPage*) atomic_load_explicit(&data->tail, II_memory_order_relaxed);
 
     if (!page)
         return iiEventFromNewPage();
 
-// relax mem order    
-    int idx = atomic_fetch_add(&page->index, 1);
+    int idx = atomic_fetch_add_explicit(&page->index, 1, II_memory_order_acquire);
     if ( idx >= eventsPerPage )
         return iiEventFromNewPage();
 
