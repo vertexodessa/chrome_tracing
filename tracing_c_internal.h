@@ -57,6 +57,7 @@ typedef enum {
 } IICellState;
 
 typedef struct {
+    const char* name;
     iiArgType type;
     union {
         const char* s;
@@ -225,7 +226,7 @@ static inline int iiDecrementWrapped(II_ATOMIC_INT* value, int boundary) {
     while (1) {
         int expected = 0;
         // we don't need to maintain memory consistency except the single "data->numEventsToFlush" variable,
-        // so using _weak exchange should be saafe here.
+        // so using _weak exchange should be safe here.
         int swapped = atomic_compare_exchange_weak(value, &expected, boundary);
         if (swapped) {
             return 0;
@@ -246,34 +247,36 @@ static inline double iiCurrentTimeUs() {
     return (1000000000LL * tm.tv_sec + tm.tv_nsec) / 1000.0;
 }
 
-static inline int iiJoinArguments(size_t arg_count, const char (*args)[iiMaxArgumentsStrSize],  char* out) {
+
+static inline int iiJoinArguments(size_t arg_count, iiSingleArgument args[][5],  char* out) {
     int pos = 1;
     out[0] = '{';
     int current_args_indx = 0;
-    int len = strlen(args[current_args_indx]);
 
-    const size_t COMMA = 1;
-    const size_t BRACKET = 1;
-    const size_t NULLSYMBOL = 1;
-    const size_t MAX_SYMBOL_POS = iiMaxArgumentsStrSize - NULLSYMBOL - BRACKET;
-
-    while ( pos + len < MAX_SYMBOL_POS ) {
-        strcpy(out + pos, args[current_args_indx]);
-
-        // terminate current argument in out
-        out[pos + len] =
-            (current_args_indx < arg_count - 1) ? ',' : '\0';
-
-        pos += len + COMMA;
-
-        if (++current_args_indx >= arg_count)
-            break;
-        len = strlen(args[current_args_indx]);
+    while (current_args_indx < arg_count) {
+        iiSingleArgument* curr = &(*args)[current_args_indx];
+        switch (curr->type) {
+            case CONST_STR:
+                pos += sprintf(out+pos, "\"%s\": \"%s\"", curr->name, curr->s);
+                break;
+            case INT:
+                pos += sprintf(out+pos, "\"%s\": %d", curr->name, curr->i);
+                break;
+            case INT64:
+                pos += sprintf(out+pos, "\"%s\": %" PRIu64, curr->name, curr->i64);
+                break;
+            default:
+                assert(0);
+                return 0;
+        }
+        out[pos++] = ',';
+        ++current_args_indx;
     }
 
     out[pos-1] = '}';
-    out[pos]   = '\0';
+    out[pos] = '\0';
 
+    assert(pos < iiMaxArgumentsStrSize);
     return 1;
 }
 
@@ -288,6 +291,7 @@ static inline int iiGetArguments(const char *format, va_list vl, iiSingleArgumen
 
         iiArgType current_arg_type = (iiArgType) format[current_args_indx];
         iiSingleArgument *curr_arg = &(*args_ret)[current_args_indx];
+        curr_arg->name = name;
         curr_arg->type = current_arg_type;
         switch ( current_arg_type ) {
             case CONST_STR:
