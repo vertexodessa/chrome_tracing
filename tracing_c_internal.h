@@ -140,7 +140,7 @@ __attribute__((destructor)) void dtor() {
     iiJoinThread();
 }
 
-static inline int iiJoinArguments(size_t arg_count, iiSingleArgument args[][5],  char* out) {
+static inline int iiJoinArguments(size_t arg_count, iiSingleArgument args[][5],  char out[iiMaxArgumentsStrSize]) {
     int pos = 0;
     int current_args_indx = 0;
 
@@ -413,7 +413,7 @@ static inline void iiEvent(const char* name, iiEventType type) {
     e->time = iiCurrentTimeUs();
 
     iiReleaseEvent(e);
-}
+} // NOLINT "potential memory leak"
 
 static inline int iiEventWithArgs(const char* name,
                                    iiEventType type,

@@ -20,7 +20,7 @@ static void BM_int_argument_output(benchmark::State& state) {
 // Register the function as a benchmark
 BENCHMARK(BM_int_argument_output);
 
-static void BM_convert_time_helper(const char* x, const char* format, ...) {
+static void BM_convert_time_helper(const char* format, ...) {
     iiSingleArgument allargs[II_MAX_ARGUMENTS];
     int converted;
 
@@ -29,13 +29,13 @@ static void BM_convert_time_helper(const char* x, const char* format, ...) {
     converted = iiGetArguments(format, vl, &allargs);
     va_end(vl);
 
-    if (!converted)
-        return;
+    benchmark::DoNotOptimize(allargs);
+    benchmark::DoNotOptimize(converted);
 }
 
 static void BM_convert_time(benchmark::State& state) {
     for (auto _ : state) {
-        BM_convert_time_helper("test", "is", "testname", 64, "test1", "teststring1");
+        BM_convert_time_helper("is", "testname", 64, "test1", "teststring1");
     }
 }
 
@@ -43,7 +43,7 @@ static void BM_convert_time(benchmark::State& state) {
 BENCHMARK(BM_convert_time);
 
 static void BM_convert_args(benchmark::State& state) {
-    char out[1024];
+    char out[iiMaxArgumentsStrSize] {0};
 
     iiSingleArgument allargs[II_MAX_ARGUMENTS];
 
@@ -62,6 +62,8 @@ static void BM_convert_args(benchmark::State& state) {
     for (auto _ : state) {
         iiJoinArguments(3, &allargs, out);
     }
+    benchmark::DoNotOptimize(allargs);
+    benchmark::DoNotOptimize(out);
     const char* ref_str = "\"str_arg_name\": \"string argument\",\"i64_arg_name\": 10000000,\"int_arg_name\": 65537";
     assert(strcmp(out, ref_str) == 0);
 }
