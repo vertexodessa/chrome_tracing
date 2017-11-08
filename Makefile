@@ -4,7 +4,7 @@ INITIAL_DIR := `pwd`
 all: c cpp bench
 
 bench: gbenchmark/bench.cpp tracing_c.h  tracing_c_internal.h  tracing_cpp.h  tracing.h
-	g++  -g -fno-omit-frame-pointer -O3 -std=c++11 -pthread gbenchmark/bench.cpp -I. -o bench -lbenchmark -fstack-protector-strong
+	g++  -g -fno-omit-frame-pointer -O0 -std=c++11 -pthread gbenchmark/bench.cpp -I. -o bench -lbenchmark -fstack-protector-strong
 	./bench
 
 cpp: tests/chrometracing.cpp tracing_c.h  tracing_c_internal.h  tracing_cpp.h  tracing.h

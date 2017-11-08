@@ -100,9 +100,6 @@ typedef struct __IIGlobalData {
     II_ATOMIC_PTR tail;
     pthread_mutex_t page_mutex;
 
-    iiEventsPage* freeList;
-    pthread_mutex_t freeList_mutex;
-
     int eventQueueSize;
 } IIGlobalData;
 
@@ -151,7 +148,6 @@ static inline int iiJoinArguments(size_t arg_count, iiSingleArgument args[][5], 
         iiSingleArgument* curr = &(*args)[current_args_indx];
         switch (curr->type) {
             case CONST_STR:
-                // FIXME: sprintf is amazingly slow. Replace with other approach.
                 pos += sprintf(out+pos, "\"%s\": \"%s\"", curr->name, curr->s);
                 break;
             case INT:
@@ -176,9 +172,8 @@ static inline int iiJoinArguments(size_t arg_count, iiSingleArgument args[][5], 
 }
 
 static inline void iiFlushEvent(iiSingleEvent* e) {
-    if (e->argCount == 0) {
+    if (e->argCount == 0)
         fprintf(__iiGlobalTracerData.fd, "{\"name\": \"%s\", \"cat\": \"PERF\", \"ph\": \"%c\", \"pid\": %d, \"tid\": %d, \"ts\": %f },\n", e->name, (char)e->type, e->pid, e->tid, e->time);
-    }
     else
     {
         char args[iiMaxArgumentsStrSize];
@@ -198,38 +193,6 @@ static inline void iiFlushPage(iiEventsPage* p) {
     }
 }
 
-static inline iiEventsPage* iiFromFreeList() {
-    IIGlobalData *data = &__iiGlobalTracerData;
-    iiEventsPage* ret = NULL;
-    pthread_mutex_lock(&data->freeList_mutex);
-    if (data->freeList) {
-        ret = data->freeList;
-        data->freeList = ret->next;
-        ret->next = NULL;
-    }
-    pthread_mutex_unlock(&data->freeList_mutex);
-    return ret;
-}
-
-static inline void iiAddToFreeList(iiEventsPage* page) {
-    IIGlobalData *data = &__iiGlobalTracerData;
-
-    memset(page, 0, sizeof(iiEventsPage));
-    atomic_store_explicit(&page->index, 1, II_memory_order_release);
-
-    pthread_mutex_lock(&data->freeList_mutex);
-    if (!data->freeList) {
-        data->freeList = page;
-        pthread_mutex_unlock(&data->freeList_mutex);
-        return;
-    }
-    iiEventsPage* last = data->freeList;
-    while (last->next) { last = last->next; }
-    last->next = page;
-
-    pthread_mutex_unlock(&data->freeList_mutex);
-}
-
 static inline void iiFlushAllPages() {
     IIGlobalData *data = &__iiGlobalTracerData;
     iiEventsPage *nextPage = data->flushQueue;
@@ -241,9 +204,7 @@ static inline void iiFlushAllPages() {
         iiFlushPage(nextPage);
         iiEventsPage *tmp = nextPage;
         nextPage = tmp->next;
-        pthread_mutex_unlock(&data->page_mutex);
-        iiAddToFreeList(tmp);
-        pthread_mutex_lock(&data->page_mutex);
+        free(tmp);
     }
 
     data->flushQueue = NULL;
@@ -256,19 +217,16 @@ __attribute__ ((weak)) void* flush_thread( void* unused ) {
     pthread_mutex_lock(&data->page_mutex);
     while (atomic_load(&data->running)) {
         int err;
-        iiEventsPage *tmp;
         while ((err = pthread_cond_wait(&data->page_added, &data->page_mutex)) != 0) {  }
+        iiEventsPage *tmp;
       flushNext:
-        if (!atomic_load(&data->running))
-            break;
-
         tmp = data->flushQueue;
         if (!tmp)
             continue;
         data->flushQueue = tmp->next;
         pthread_mutex_unlock(&data->page_mutex);
         iiFlushPage(tmp);
-        iiAddToFreeList(tmp);
+        free(tmp);
         pthread_mutex_lock(&data->page_mutex);
         goto flushNext;
     }
@@ -283,8 +241,6 @@ __attribute__ ((weak)) void* flush_thread( void* unused ) {
 
 static inline void iiInitEnvironment() {
     IIGlobalData *data = &__iiGlobalTracerData;
-    memset(data, 0, sizeof(IIGlobalData));
-
     data->fd = fopen(iiFileNameFromEnv(), "w");
     setvbuf(data->fd, NULL , _IOLBF , 4096);
     fprintf(data->fd, "[");
@@ -295,7 +251,6 @@ static inline void iiInitEnvironment() {
     if (pthread_cond_init(&data->page_added, &ignored))
         printf("ERROR: can't init conditional variable\n");
 
-    pthread_mutex_init(&data->freeList_mutex, NULL);
     pthread_mutex_init(&data->page_mutex, NULL);
 
     pthread_attr_t attr;
@@ -373,7 +328,7 @@ static inline int iiGetArguments(const char *format, va_list vl, iiSingleArgumen
 static inline int iiIncrementWrapped( II_ATOMIC_INT* i, int ceil ) {
     int expected, desired;
     do {
-        expected = atomic_load_explicit(i, II_memory_order_relaxed);
+        expected = atomic_load(i);
         desired = expected + 1;
         if (desired >= ceil) desired = 0;
     } while (!atomic_compare_exchange_weak(i, &expected, desired));
@@ -408,20 +363,16 @@ static inline iiSingleEvent* iiEventFromNewPage() {
         }
     }
 
-    iiEventsPage* newPage = iiFromFreeList();
-
-    if (!newPage) {
-        // we're definitely out of space. Let's allocate a new page from heap.
-        newPage = (iiEventsPage*) calloc(sizeof(iiEventsPage), 1);
-        atomic_store_explicit(&newPage->index, 1, II_memory_order_relaxed);
-    }
-
-    iiEventsPage* oldtail = (iiEventsPage*) atomic_load_explicit(&data->tail, II_memory_order_relaxed);
-    atomic_store_explicit(&data->tail, (uintptr_t) newPage, II_memory_order_relaxed);
+    // we're definitely out of space. Let's allocate a new page.
+    iiEventsPage* newPage = (iiEventsPage*) calloc(sizeof(iiEventsPage), 1);
+    iiEventsPage* oldtail = (iiEventsPage*) atomic_load(&data->tail);
+    atomic_store(&newPage->index, 1);
+    atomic_store(&data->tail, (uintptr_t) newPage);
 
     iiEventsPage* i = data->flushQueue;
     if (i) {
-        while (i->next) { i = i->next; }
+        while (i->next)
+            i = i->next;
         i->next = oldtail;
     } else {
         data->flushQueue = oldtail;
