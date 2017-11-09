@@ -8,7 +8,7 @@ const char*    iiTraceFileEnvVar = "II_TRACE_FILE";
 const char*    iiEventQueueSize = "II_EVENT_QUEUE_SIZE";
 const char*    iiDefaultTraceFileName = "/tmp/out.trace";
 const size_t   iiMaxArgumentsStrSize = 1024;
-const size_t   II_MAX_ARGUMENTS = 5;
+#define   II_MAX_ARGUMENTS 5
 
 typedef enum {
     INT = 'i',
