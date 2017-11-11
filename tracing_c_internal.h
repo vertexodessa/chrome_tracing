@@ -69,22 +69,23 @@ typedef struct {
 typedef struct {
     II_ATOMIC_INT flushStatus;
     const char* name;
-    iiEventType type;
-    size_t argCount;
-    double time;
-    pid_t pid;
+    char type;
+    char argCount;
+    float time;
+    //pid_t pid;
     pid_t tid;
     // FIXME: current limitation is, that an event might have 5 arguments at max
     iiSingleArgument args[II_MAX_ARGUMENTS];
 } iiSingleEvent;
 
+// #define eventsPerPage 56*4096 / sizeof(iiSingleEvent)
 #define eventsPerPage 4096
 typedef struct __iiEventsPage {
     struct __iiEventsPage* next;
     II_ATOMIC_INT index;
 
 // FIXME: don't hardcode event count    
-    iiSingleEvent events[eventsPerPage];
+    iiSingleEvent __attribute__((__packed__))  events[eventsPerPage];
 } iiEventsPage;
 
 typedef struct __IIGlobalData {
@@ -172,13 +173,14 @@ static inline int iiJoinArguments(size_t arg_count, iiSingleArgument args[][II_M
 }
 
 static inline void iiFlushEvent(iiSingleEvent* e) {
-    if (e->argCount == 0)
-        fprintf(__iiGlobalTracerData.fd, "{\"name\": \"%s\", \"cat\": \"PERF\", \"ph\": \"%c\", \"pid\": %d, \"tid\": %d, \"ts\": %f },\n", e->name, (char)e->type, e->pid, e->tid, e->time);
+    if (e->argCount == 0) {
+        //fprintf(__iiGlobalTracerData.fd, "{\"name\": \"%s\", \"cat\": \"PERF\", \"ph\": \"%c\", \"pid\": %d, \"tid\": %d, \"ts\": %f },\n", e->name, (char)e->type, e->pid, e->tid, e->time);
+    }
     else
     {
         char args[iiMaxArgumentsStrSize];
         iiJoinArguments(e->argCount, &e->args, args);
-        fprintf(__iiGlobalTracerData.fd, "{\"name\": \"%s\", \"cat\": \"PERF\", \"ph\": \"%c\", \"pid\": %d, \"tid\": %d, \"ts\": %f, \"args\": {%s} },\n", e->name, (char)e->type, e->pid, e->tid, e->time, args);
+        //fprintf(__iiGlobalTracerData.fd, "{\"name\": \"%s\", \"cat\": \"PERF\", \"ph\": \"%c\", \"pid\": %d, \"tid\": %d, \"ts\": %f, \"args\": {%s} },\n", e->name, (char)e->type, e->pid, e->tid, e->time, args);
     }
 
     atomic_store(&e->flushStatus, (int) II_FLUSHED);
@@ -213,6 +215,7 @@ static inline void iiFlushAllPages() {
 __attribute__ ((weak)) void* flush_thread( void* unused ) {
     (void) unused;
 
+    return NULL;
     IIGlobalData *data = &__iiGlobalTracerData;
     pthread_mutex_lock(&data->page_mutex);
     while (atomic_load(&data->running)) {
@@ -353,7 +356,7 @@ static inline iiSingleEvent* iiEventFromNewPage() {
     IIGlobalData *data = &__iiGlobalTracerData;
     pthread_mutex_lock(&data->page_mutex);
 
-    iiEventsPage* page = (iiEventsPage*) atomic_load(&data->tail);
+    iiEventsPage* page = (iiEventsPage*) atomic_load_explicit(&data->tail, II_memory_order_relaxed);
 
     if (page) {
         int idx = atomic_fetch_add_explicit(&page->index, 1, II_memory_order_acquire);
@@ -403,34 +406,39 @@ static inline iiSingleEvent* iiGetNextEvent() {
 
 // NOTE: LIMITATION: name must be alive for the program lifetime
 static inline void iiEvent(const char* name, iiEventType type) {
+//    printf("%d %d\n", sizeof(iiSingleEvent), sizeof(int64_t));
+    // iiSingleEvent e1;
+    // iiSingleEvent *e = &e1;
     iiSingleEvent *e = iiGetNextEvent();
-    atomic_store_explicit(&e->flushStatus, (int)II_FILLING, II_memory_order_release);
+    //atomic_store_explicit(&e->flushStatus, (int)II_FILLING, II_memory_order_relaxed);
     e->type = type;
     e->name = name;
     e->argCount = 0;
-    e->tid = gettid();
-    e->pid = getpid();
-    e->time = iiCurrentTimeUs();
+    e->tid = 1;//gettid();
+    //e->pid = getpid();
+    //e->time = iiCurrentTimeUs();
 
-    iiReleaseEvent(e);
+    //iiReleaseEvent(e);
 } // NOLINT "potential memory leak"
 
 static inline int iiEventWithArgs(const char* name,
                                    iiEventType type,
                                    const char* format,
                                    va_list args) {
+    // iiSingleEvent e1;
+    // iiSingleEvent *e = &e1;
     iiSingleEvent *e = iiGetNextEvent();
-    atomic_store_explicit(&e->flushStatus, (int)II_FILLING, II_memory_order_release);
+    //atomic_store_explicit(&e->flushStatus, (int)II_FILLING, II_memory_order_relaxed);
     e->type = type;
     e->name = name;
     e->argCount = 0;
-    e->tid = gettid();
-    e->pid = getpid();
-    e->time = iiCurrentTimeUs();
+    e->tid = 1;//gettid();
+    //e->pid = getpid();
+    //e->time = iiCurrentTimeUs();
 
-    e->argCount = iiGetArguments(format, args, &e->args);
+    //e->argCount = iiGetArguments(format, args, &e->args);
 
-    iiReleaseEvent(e);
+    //iiReleaseEvent(e);
     return e->argCount;
 }
 
