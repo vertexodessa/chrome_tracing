@@ -22,7 +22,7 @@ typedef enum {
     EVENT_END = 'E'
 } iiEventType;
 
-#include "tracing_c_internal.h"
+#include "internals/tracing_c_internal.h"
 
 // TODO: improve the timing twice by using COMPLETE events ('X') instead
 
