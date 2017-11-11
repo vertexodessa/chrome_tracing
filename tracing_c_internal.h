@@ -75,7 +75,7 @@ typedef struct {
     pid_t pid;
     pid_t tid;
     // FIXME: current limitation is, that an event might have 5 arguments at max
-    iiSingleArgument args[5];
+    iiSingleArgument args[II_MAX_ARGUMENTS];
 } iiSingleEvent;
 
 #define eventsPerPage 4096
@@ -140,7 +140,7 @@ __attribute__((destructor)) void dtor() {
     iiJoinThread();
 }
 
-static inline int iiJoinArguments(size_t arg_count, iiSingleArgument args[][5],  char out[iiMaxArgumentsStrSize]) {
+static inline int iiJoinArguments(size_t arg_count, iiSingleArgument args[][II_MAX_ARGUMENTS],  char out[iiMaxArgumentsStrSize]) {
     int pos = 0;
     int current_args_indx = 0;
 
@@ -284,7 +284,7 @@ static inline double iiCurrentTimeUs() {
     return (1000000000LL * tm.tv_sec + tm.tv_nsec) / 1000.0;
 }
 
-static inline int iiGetArguments(const char *format, va_list vl, iiSingleArgument args_ret[][5]) {
+static inline int iiGetArguments(const char *format, va_list vl, iiSingleArgument args_ret[][II_MAX_ARGUMENTS]) {
     int arg_count = strlen(format);
     int current_args_indx = 0;
     const char* name;
