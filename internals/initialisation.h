@@ -25,6 +25,8 @@ static inline int iiEventQueueSizeFromEnv() {
 
 static inline void iiInitEnvironment() {
     IIGlobalData *data = &__iiGlobalTracerData;
+    memset(data, 0, sizeof(IIGlobalData));
+
     data->fd = fopen(iiFileNameFromEnv(), "w");
     setvbuf(data->fd, NULL , _IOLBF , 4096);
     fprintf(data->fd, "[");
@@ -35,6 +37,7 @@ static inline void iiInitEnvironment() {
     if (pthread_cond_init(&data->page_added, &ignored))
         printf("ERROR: can't init conditional variable\n");
 
+    pthread_mutex_init(&data->freeList_mutex, NULL);
     pthread_mutex_init(&data->page_mutex, NULL);
 
     pthread_attr_t attr;

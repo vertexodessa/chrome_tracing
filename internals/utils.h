@@ -23,7 +23,7 @@ static inline int iiDecrementWrapped(II_ATOMIC_INT* value, int boundary) {
 static inline int iiIncrementWrapped( II_ATOMIC_INT* i, int ceil ) {
     int expected, desired;
     do {
-        expected = atomic_load(i);
+        expected = atomic_load_explicit(i, II_memory_order_relaxed);
         desired = expected + 1;
         if (desired >= ceil) desired = 0;
     } while (!atomic_compare_exchange_weak(i, &expected, desired));

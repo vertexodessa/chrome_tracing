@@ -18,6 +18,7 @@ static inline int iiJoinArguments(size_t arg_count, iiSingleArgument args[][II_M
 
     while (current_args_indx < arg_count) {
         iiSingleArgument* curr = &(*args)[current_args_indx];
+        // FIXME: sprintf is amazingly slow. Replace with other approach.
         switch (curr->type) {
             case CONST_STR:
                 pos += sprintf(out+pos, "\"%s\": \"%s\"", curr->name, curr->s);
@@ -76,7 +77,9 @@ static inline void iiFlushAllPages() {
         iiFlushPage(nextPage);
         iiEventsPage *tmp = nextPage;
         nextPage = tmp->next;
-        free(tmp);
+        pthread_mutex_unlock(&data->page_mutex);
+        iiAddToFreeList(tmp);
+        pthread_mutex_lock(&data->page_mutex);
     }
 
     data->flushQueue = NULL;
@@ -89,16 +92,19 @@ __attribute__ ((weak)) void* flush_thread( void* unused ) {
     pthread_mutex_lock(&data->page_mutex);
     while (atomic_load(&data->running)) {
         int err;
-        while ((err = pthread_cond_wait(&data->page_added, &data->page_mutex)) != 0) {  }
         iiEventsPage *tmp;
+        while ((err = pthread_cond_wait(&data->page_added, &data->page_mutex)) != 0) {  }
       flushNext:
+        if (!atomic_load(&data->running))
+            break;
+
         tmp = data->flushQueue;
         if (!tmp)
             continue;
         data->flushQueue = tmp->next;
         pthread_mutex_unlock(&data->page_mutex);
         iiFlushPage(tmp);
-        free(tmp);
+        iiAddToFreeList(tmp);
         pthread_mutex_lock(&data->page_mutex);
         goto flushNext;
     }

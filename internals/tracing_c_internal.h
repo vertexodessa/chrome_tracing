@@ -5,6 +5,7 @@
 #include "includes_defines.h"
 #include "types.h"
 #include "globals.h"
+#include "freelist.h"
 #include "flush_thread.h"
 #include "initialisation.h"
 #include "utils.h"

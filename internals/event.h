@@ -68,16 +68,20 @@ static inline iiSingleEvent* iiEventFromNewPage() {
         }
     }
 
-    // we're definitely out of space. Let's allocate a new page.
-    iiEventsPage* newPage = (iiEventsPage*) calloc(sizeof(iiEventsPage), 1);
-    iiEventsPage* oldtail = (iiEventsPage*) atomic_load(&data->tail);
-    atomic_store(&newPage->index, 1);
-    atomic_store(&data->tail, (uintptr_t) newPage);
+    iiEventsPage* newPage = iiFromFreeList();
+
+    if (!newPage) {
+        // we're definitely out of space. Let's allocate a new page from heap.
+        newPage = (iiEventsPage*) calloc(sizeof(iiEventsPage), 1);
+        atomic_store_explicit(&newPage->index, 1, II_memory_order_relaxed);
+    }
+
+    iiEventsPage* oldtail = (iiEventsPage*) atomic_load_explicit(&data->tail, II_memory_order_relaxed);
+    atomic_store_explicit(&data->tail, (uintptr_t) newPage, II_memory_order_relaxed);
 
     iiEventsPage* i = data->flushQueue;
     if (i) {
-        while (i->next)
-            i = i->next;
+        while (i->next) { i = i->next; }
         i->next = oldtail;
     } else {
         data->flushQueue = oldtail;

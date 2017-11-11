@@ -4,6 +4,7 @@ INITIAL_DIR := `pwd`
 INTERNAL_HEADERS = \
     internals/event.h \
     internals/flush_thread.h \
+    internals/freelist.h \
     internals/globals.h \
     internals/includes_defines.h \
     internals/initialisation.h \
@@ -11,10 +12,11 @@ INTERNAL_HEADERS = \
     internals/types.h \
     internals/utils.h \
 
+
 all: c cpp bench
 
 bench: gbenchmark/bench.cpp tracing_c.h $(INTERNAL_HEADERS) tracing_cpp.h  tracing.h
-	g++  -g -fno-omit-frame-pointer -O0 -std=c++11 -pthread gbenchmark/bench.cpp -I. -o bench -lbenchmark -fstack-protector-strong
+	g++  -g -fno-omit-frame-pointer -O3 -std=c++11 -pthread gbenchmark/bench.cpp -I. -o bench -lbenchmark -fstack-protector-strong
 	./bench
 
 cpp: tests/chrometracing.cpp tracing_c.h $(INTERNAL_HEADERS) tracing_cpp.h  tracing.h

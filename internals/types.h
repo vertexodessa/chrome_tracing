@@ -51,6 +51,9 @@ typedef struct __IIGlobalData {
     II_ATOMIC_PTR tail;
     pthread_mutex_t page_mutex;
 
+    iiEventsPage* freeList;
+    pthread_mutex_t freeList_mutex;
+
     int eventQueueSize;
 } IIGlobalData;
 
